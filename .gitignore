@@ -1,0 +1,6 @@
+*-bak
+*.bak
+hardware/_autosave*
+hardware/we755a_dtmf-backups/
+hardware/fp-info-cache
+.DS_Store

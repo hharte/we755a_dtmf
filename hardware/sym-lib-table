@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "AVR128DA28")(type "KiCad")(uri "${KIPRJMOD}/AVR128DA28.kicad_sym")(options "")(descr ""))
+  (lib (name "we755a_dtmf")(type "KiCad")(uri "${KIPRJMOD}/we755a_dtmf.kicad_sym")(options "")(descr ""))
+)
