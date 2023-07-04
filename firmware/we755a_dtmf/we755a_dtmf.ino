@@ -29,16 +29,27 @@
  *                                                                       *
  * Module Description:                                                   *
  * Western Electric 755A Crossbar PBX DTMF to Pulse Counting Relay       *
- * Converter                                                             *
+ * Converter.                                                            *
+ *                                                                       *
+ * Receives DTMF digits and activates T2/T3 and pulse counting relays    *
+ * to their terminal count for the digit dialed.  This circuit's ground  *
+ * comes from the Link B relay so that the converter is powered off when *
+ * the link is idle.  This helps discriminate between first and second   *
+ * dialed digits.  Additionally, the link E relay is monitored to        *
+ * determine when it is ok to allow dialing again for conference calls.  *
+ * The Link E relay is activated when the called station answers.  This  *
+ * takes the state machine out of DIAL_STATE_DIALING_BLOCKED, returning  *
+ * it to DIAL_STATE_IDLE so that further dialing is allowed.  In the     *
+ * DIAL_STATE_IDLE state, dialing is inhibited if the E relay is active, *
+ * which indicates that the called party is off-hook.                    *
  *                                                                       *
  * Arduino 1.8.57.0 or later with DxCore                                 *
  *                                                                       *
  *************************************************************************/
 
 #define BAUD_RATE           115200
-#define RELAY_SETTLE_DELAY  300   /* Delay for relays to settle, in ms. */
 #define MS_PER_TICK         20
-#define RELAY_HOLD_MS       200
+#define RELAY_HOLD_MS       100
 #define POST_DIAL_MS        100
 #define COUNT_PER_MS        93.6
 #define RELAY_HOLD_COUNT    (RELAY_HOLD_MS / MS_PER_TICK)
@@ -46,10 +57,9 @@
 
 #define DIAL_STATE_IDLE             0
 #define DIAL_STATE_WAIT_DTMF_DONE   1
-#define DIAL_STATE_OPERATE_TENS     2
-#define DIAL_STATE_OPERATE_UNITS    3
-#define DIAL_STATE_OPERATE_C1       4
-#define DIAL_STATE_DIALING_COMPLETE 5
+#define DIAL_STATE_OPERATE_RELAYS   2
+#define DIAL_STATE_DIALING_COMPLETE 3
+#define DIAL_STATE_DIALING_BLOCKED  4
 
 /* Pin assignments:
  * ref: https://github.com/SpenceKonde/DxCore/blob/master/megaavr/extras/DA28.md
@@ -85,31 +95,38 @@
 
 /* DTMF Digit to 755A Pulse Counting Relay Mapping */
 const unsigned char units_relay_table[16] = {
-    0,                    // D (Not valid)
-    SSR_1_7_B,            // 1
-    SSR_2_8_B,            // 2
-    SSR_3_9_B,            // 3
-    SSR_4_0_B,            // 4
-    SSR_5_6_B,            // 5
-    SSR_5_6_B | SSR_6_B,  // 6
-    SSR_1_7_B | SSR_6_B,  // 7
-    SSR_2_8_B | SSR_6_B,  // 8
-    SSR_3_9_B | SSR_6_B,  // 9
-    SSR_4_0_B | SSR_6_B,  // 0
-    0,                    // * (Not valid)
-    0,                    // # (Not valid)
-    0,                    // A (Not valid)
-    0,                    // B (Not valid)
-    0                     // C (Not valid)
+    0,                    /* D (Not valid) */
+    SSR_1_7_B,            /* 1 */
+    SSR_2_8_B,            /* 2 */
+    SSR_3_9_B,            /* 3 */
+    SSR_4_0_B,            /* 4 */
+    SSR_5_6_B,            /* 5 */
+    SSR_5_6_B | SSR_6_B,  /* 6 */
+    SSR_1_7_B | SSR_6_B,  /* 7 */
+    SSR_2_8_B | SSR_6_B,  /* 8 */
+    SSR_3_9_B | SSR_6_B,  /* 9 */
+    SSR_4_0_B | SSR_6_B,  /* 0 */
+    0,                    /* * (Not valid) */
+    0,                    /* # (Not valid) */
+    0,                    /* A (Not valid) */
+    0,                    /* B (Not valid) */
+    0                     /* C (Not valid) */
 };
 
-/* Inputs from 756A Link */
-#define LINK_ACTIVE       18  /* PD6 */
+/* Inputs from 755A Link */
+#define LINK_E            18  /* PD6 */
 
 /* Output: Status LED, Low=On */
 #define STATUS_LED        11  /* PIN_PC3 */
 
 #define STATUS_LED_B      (1 << 3)
+
+#define LED_ON(x)         VPORTC.OUT &= ~STATUS_LED_B;
+#define LED_OFF(x)        VPORTC.OUT |=  STATUS_LED_B;
+
+#define DIAL_IN_PROGRESS(x) \
+  ((dtmf_dial_state != DIAL_STATE_IDLE) && \
+   (dtmf_dial_state != DIAL_STATE_DIALING_BLOCKED))
 
 const char          menu[] = "\n\rCommands:\n\r" \
                              "    w   - Dial 2x (tens digit)\n\r" \
@@ -120,24 +137,10 @@ const char          menu[] = "\n\rCommands:\n\r" \
                              "    i-k - Activate 5-6, 6, Spare\n\r" \
                              "    r   - Release all relays\n\r";
 
-typedef struct dtmf_event_record {
-    uint32_t timestamp;
-    uint16_t dtmf_duration;
-    uint8_t dtmf_digit;
-} dtmf_event_record_t;
-
-typedef struct {
-    uint8_t r_index;
-    uint8_t w_index;
-    dtmf_event_record_t events[8];
-} dtmf_events_t;
-
-dtmf_events_t dtmf_events;
-
 volatile uint8_t dtmf_digit = 0;            /* DTMF Digit read by ISR */
 uint8_t dtmf_digits[2] = { 0, 0 };          /* Storage for two dialed digits */
 uint8_t digits_collected = 0;               /* Number of digits collected so far. */
-bool link_active;
+bool link_e;
 bool link_updated = false;
 bool dtmf_updated = false;
 bool pet_watchdog = true;
@@ -177,7 +180,7 @@ void setup(void) {
   pinMode (DTMF_Q1,     INPUT);
   pinMode (DTMF_Q2,     INPUT);
   pinMode (DTMF_Q3,     INPUT);
-  pinMode (LINK_ACTIVE, INPUT);
+  pinMode (LINK_E,      INPUT_PULLUP);
 
   takeOverTCA0();
   TCA0.SINGLE.CTRLB = TCA_SINGLE_WGMODE_NORMAL_gc;
@@ -186,11 +189,7 @@ void setup(void) {
   TCA0.SINGLE.INTCTRL = TCA_SINGLE_OVF_bm; /* Enable timer overflow interrupt */
   TCA0.SINGLE.CTRLA = TCA_SINGLE_CLKSEL_DIV256_gc | TCA_SINGLE_ENABLE_bm;
 
-  dtmf_events.w_index = 0;
-  dtmf_events.r_index = 0;
-  memset(&dtmf_events, 0, sizeof(dtmf_events));
-
-  attachInterrupt(digitalPinToInterrupt(LINK_ACTIVE), link_isr,   CHANGE);
+  attachInterrupt(digitalPinToInterrupt(LINK_E), link_isr,   CHANGE);
   attachInterrupt(digitalPinToInterrupt(DTMF_StD),    DTMF_isr,   RISING);
 
   Serial.print("Western Electric 755A Crossbar PBX DTMF Converter\r\n");
@@ -221,20 +220,22 @@ void loop() {
       case 'W':
         dtmf_digits[0] = 2;
         dtmf_digits[1] = 0;
-        dtmf_dial_state = DIAL_STATE_OPERATE_TENS;
-        VPORTC.OUT &= ~STATUS_LED_B;
+        dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
+        LED_ON();
         Serial.print("\r\nDial 2 (tens)\r\n");
-        while (dtmf_dial_state != DIAL_STATE_IDLE);
+        while (DIAL_IN_PROGRESS());
+        LED_OFF();
         dtmf_updated = 0;
         break;
       case 'h':
       case 'H':
         dtmf_digits[0] = 3;
         dtmf_digits[1] = 0;
-        dtmf_dial_state = DIAL_STATE_OPERATE_TENS;
-        VPORTC.OUT &= ~STATUS_LED_B;
+        dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
+        LED_ON();
         Serial.print("\r\nDial 3 (tens)\r\n");
-        while (dtmf_dial_state != DIAL_STATE_IDLE);
+        while (DIAL_IN_PROGRESS());
+        LED_OFF();
         dtmf_updated = 0;
         break;
       case '0':
@@ -253,9 +254,10 @@ void loop() {
         Serial.print(outstr);
         if (r == 0) r = 10; /* '0' is 10 for the 8870. */
         dtmf_digits[1] = r;
-        dtmf_dial_state = DIAL_STATE_OPERATE_UNITS;
-        VPORTC.OUT &= ~STATUS_LED_B;
-        while (dtmf_dial_state != DIAL_STATE_IDLE);
+        dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
+        LED_ON();
+        while (DIAL_IN_PROGRESS());
+        LED_OFF();
         break;
       }
       case 'a':
@@ -344,7 +346,9 @@ void loop() {
         Serial.print("\r\Released all relays\r\n");
         break;
       }
-
+      case '\r':
+      case '\n':
+        break;
       default:
         Serial.print("\r\nInvalid choice.\r\n");
         break;
@@ -360,47 +364,31 @@ void loop() {
     Serial.print(outstr);
   }
   if (link_updated == 1) {
-    sprintf(outstr, "Link changed to %s\r\n", link_active == 1 ? "ACTIVE" : "IDLE");
+    sprintf(outstr, "Link E relay changed to %s\r\n", link_e == 1 ? "Operated" : "Released");
     link_updated = 0;
     Serial.print(outstr);
   }
-
-#if 0
-  while (dtmf_events.r_index != dtmf_events.w_index) {
-    if (dtmf_events.events[dtmf_events.r_index].timestamp == 0) continue;
-    printf("[%lu: '%d' %dms index: %d\n\r", dtmf_events.events[dtmf_events.r_index].timestamp,
-            dtmf_events.events[dtmf_events.r_index].dtmf_digit,
-            dtmf_events.events[dtmf_events.r_index].dtmf_duration,
-            dtmf_events.r_index);
-    dtmf_events.r_index++;
-    if (dtmf_events.r_index >= 8) {
-        dtmf_events.r_index = 0;
-    }
-  }
-#endif // 0
 }
 
 /* Process low to high transitions on the MT8870 StD input. */
 void DTMF_isr(void) {
 
   if (digitalRead(DTMF_StD) == 1) {
-    VPORTC.OUT &= ~STATUS_LED_B;
+    LED_ON();
     dtmf_digit = VPORTA.IN & 0x0F;
-    dtmf_events.events[dtmf_events.w_index].timestamp = timer_tick;
   }
 }
 
-/* Process high to low transitions on the LINK_ACTIVE line. */
+/* Process high to low transitions on the LINK_E line. */
 void link_isr(void) {
-  bool link_prev = link_active;
-  if (digitalRead(LINK_ACTIVE) == 0) {
-    digits_collected = 0;
-    link_active = true;
+  bool link_prev = link_e;
+  if (digitalRead(LINK_E) == 0) {
+    link_e = true;
   } else {
-    link_active = false;
+    link_e = false;
   }
 
-  if (link_prev != link_active) {
+  if (link_prev != link_e) {
     link_updated = true;
   }
 }
@@ -416,25 +404,34 @@ ISR(TCA0_OVF_vect) {
 
 #ifdef BLINK_LED
   if (timer_tick & 0x40) {
-    VPORTC.OUT &= ~STATUS_LED_B;
+    LED_ON();
   } else {
-    VPORTC.OUT |= STATUS_LED_B;
+    LED_OFF();
   }
 #endif /* BLINK_LED */
 
   switch(dtmf_dial_state) {
     case DIAL_STATE_IDLE:
       /* Waiting for DTMF from Link. */
-      VPORTC.OUT |= STATUS_LED_B;
+      LED_OFF();
 
+      if (digitalRead(LINK_E) == 0) {
+        /* When LINK E relay is active, the called station has answered,
+         * do not allow dialing until the called party hangs up.
+         */
+        dtmf_digit = 0;
+        break;
+      }
       if (dtmf_digit > 0) {
           dtmf_dial_state = DIAL_STATE_WAIT_DTMF_DONE;
           dtmf_digits[digits_collected] = dtmf_digit;
           if (digits_collected == 0) {
             switch (dtmf_digit) {
+              case 3:
+                /* Operate T3. */
+                digitalWrite(SSR_T3, LOW);
               case 10:
               case 2:
-              case 3:
               case 8:
               case 9:
                 /* Operate T2 to break dialtone. */
@@ -445,17 +442,14 @@ ISR(TCA0_OVF_vect) {
             }
           }
           dtmf_digit = 0;
-          dtmf_events.events[dtmf_events.w_index].dtmf_digit = dtmf_digits[digits_collected];
-          dtmf_events.events[dtmf_events.w_index].dtmf_duration = 0;
       }
       break;
     case DIAL_STATE_WAIT_DTMF_DONE:
       /* Wait in this state until DTMFx_StD is de-asserted. */
-      dtmf_events.events[dtmf_events.w_index].dtmf_duration += 20;
 
       if (digitalRead(DTMF_StD) == 0) {
         digits_collected++;
-        VPORTC.OUT &= ~STATUS_LED_B;
+        LED_ON();
         if (digits_collected == 1) {
           digitalWrite(SSR_T2, HIGH);
           switch (dtmf_digits[0]) {
@@ -490,85 +484,63 @@ ISR(TCA0_OVF_vect) {
           }
         }
         if (digits_collected == 2) {
-          dtmf_dial_state = DIAL_STATE_OPERATE_TENS;
+          dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
         }
       }
       break;
-    case DIAL_STATE_OPERATE_TENS:
+    case DIAL_STATE_OPERATE_RELAYS:
       dtmf_delay++;
       if (dtmf_delay == POST_DIAL_COUNT) {
         dtmf_delay = 0;
         dtmf_updated = 1;
 
-        dtmf_events.w_index ++;
-        if (dtmf_events.w_index == 8) {
-            dtmf_events.w_index = 0;
-        }
-
         /* Operate the 755A Tens Relays T2, T3 */
-        if ((dtmf_digits[0] == 2) || (dtmf_digits[0] == 3)) {
-          if (dtmf_digits[0] >= 2) {
-            digitalWrite(SSR_T2, LOW);
-          }
-          if (dtmf_digits[0] == 3) {
+        switch (dtmf_digits[0]) {
+          case 3: /* 3x */
             digitalWrite(SSR_T3, LOW);
-          }
-        } else {
-          dtmf_dial_state = DIAL_STATE_IDLE;
+            /* Fall through */
+          case 2: /* 2x */
+            digitalWrite(SSR_T2, LOW);
+            break;
+          default:
+            break;
         }
-
-        dtmf_dial_state = DIAL_STATE_OPERATE_UNITS;
-      }
-      break;
-    case DIAL_STATE_OPERATE_UNITS:
-      /* Wait for relays to be active for 300ms */
-      dtmf_delay++;
-      if (dtmf_delay == RELAY_HOLD_COUNT) {
-        dtmf_delay = 0;
-        /* Release T2 and T3 relays */
-        digitalWrite(SSR_T2, HIGH);
-        digitalWrite(SSR_T3, HIGH);
 
         if (dtmf_digits[1] > 0) {
           /* Operate C1 relay */
           digitalWrite(SSR_C1, LOW);
           /* Operate Units relays */
           VPORTD.OUT &= ~(units_relay_table[dtmf_digits[1]]);
-          dtmf_dial_state = DIAL_STATE_OPERATE_C1;
-        } else {
-          dtmf_dial_state = DIAL_STATE_IDLE;
         }
-      }
-      break;
-    case DIAL_STATE_OPERATE_C1:
-      dtmf_delay++;
-      if (dtmf_delay == RELAY_HOLD_COUNT) {
-        dtmf_delay = 0;
-        if (dtmf_digits[1] > 0) {
-          /* Release units relays */
-          VPORTD.OUT |= units_relay_table[dtmf_digits[1]];
-
-          /* Operate C1 relay */
-          digitalWrite(SSR_C1, LOW);
-          dtmf_dial_state = DIAL_STATE_DIALING_COMPLETE;
-        } else {
-          dtmf_dial_state = DIAL_STATE_IDLE;
-        }
+        dtmf_dial_state = DIAL_STATE_DIALING_COMPLETE;
       }
       break;
     case DIAL_STATE_DIALING_COMPLETE:
       dtmf_delay++;
       if (dtmf_delay == RELAY_HOLD_COUNT) {
         dtmf_delay = 0;
+
+        /* Release T2 and T3 relays */
+        digitalWrite(SSR_T2, HIGH);
+        digitalWrite(SSR_T3, HIGH);
+
+        /* Release units relays */
+        VPORTD.OUT |= units_relay_table[dtmf_digits[1]];
+
+        /* Release C1 relay */
         digitalWrite(SSR_C1, HIGH);
-        dtmf_dial_state = DIAL_STATE_IDLE;
+
+        /* Block dialing until the called station answers, and then goes back on-hook. */
+        dtmf_dial_state = DIAL_STATE_DIALING_BLOCKED;
+      }
+      break;
+    case DIAL_STATE_DIALING_BLOCKED:
+      /* Unblock dialing when the called station answers. */
+      if (digitalRead(LINK_E) == 0) {
         digits_collected = 0;
         dtmf_digits[0] = 0;
         dtmf_digits[1] = 0;
-        dtmf_events.w_index++;
-        if (dtmf_events.w_index == 8) {
-          dtmf_events.w_index = 0;
-        }
+        dtmf_dial_state = DIAL_STATE_IDLE;
       }
       break;
     default: /* Invalid state, go back to idle. */
