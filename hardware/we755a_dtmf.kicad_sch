@@ -6,8 +6,8 @@
 
   (title_block
     (title "WE 755A PBX DTMF Converter")
-    (date "2023-06-03")
-    (rev "1")
+    (date "2023-07-04")
+    (rev "2")
     (company "Howard M. Harte")
     (comment 1 "https://github.com/hharte/we755a_dtmf")
   )
@@ -3567,7 +3567,7 @@
     (effects (font (size 1.27 1.27)) (justify right bottom))
     (uuid c7ab229b-a326-461f-b42d-ca2d4cb36c7b)
   )
-  (label "LINK_B" (at 167.64 63.5 0) (fields_autoplaced)
+  (label "LINK_E" (at 167.64 63.5 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left bottom))
     (uuid c8a2415f-e0d6-43db-a41e-d3dd18722dab)
   )
@@ -3672,7 +3672,7 @@
     (effects (font (size 1.27 1.27)) (justify left))
     (uuid dada06c5-5a46-46b4-b241-4edc6f20db8e)
   )
-  (hierarchical_label "LINK_B" (shape output) (at 254 154.94 0) (fields_autoplaced)
+  (hierarchical_label "LINK_E" (shape output) (at 254 154.94 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
     (uuid f85e8c47-adff-449d-a78e-16b309a1a1fc)
   )
@@ -4506,7 +4506,7 @@
     (property "Reference" "C1" (at 136.271 26.7716 0)
       (effects (font (size 1.27 1.27)) (justify left))
     )
-    (property "Value" "1uF" (at 136.271 29.083 0)
+    (property "Value" "0.1uF" (at 136.271 29.083 0)
       (effects (font (size 1.27 1.27)) (justify left))
     )
     (property "Footprint" "Capacitor_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" (at 134.3152 31.75 0)
@@ -5139,12 +5139,12 @@
       (effects (font (size 1.27 1.27)) (justify left) hide)
     )
     (pin "1" (uuid 0e69fbbf-d964-488e-beb6-da07774a6ffe))
-    (pin "2" (uuid 9b4d8ade-2685-48a9-8d56-7ff110785646))
+    (pin "2" (uuid 9b4d8ade-2685-48a9-8d56-7ff110785649))
     (pin "3" (uuid 65c02e08-f6a7-4d1e-91a8-cb3cae033410))
     (pin "5" (uuid 02abb67e-c9a9-4a21-9d46-c5a223ba263a))
     (pin "6" (uuid ba7e3f21-d230-4a10-9527-2bd972362380))
     (pin "7" (uuid 36d784df-d0c7-4f4e-a8d4-f2883694e1b0))
-    (pin "2" (uuid 9b4d8ade-2685-48a9-8d56-7ff110785646))
+    (pin "2" (uuid 9b4d8ade-2685-48a9-8d56-7ff110785649))
     (instances
       (project "we755a_dtmf"
         (path "/1da82a49-7ca3-4401-a29b-3550e75481e8"
