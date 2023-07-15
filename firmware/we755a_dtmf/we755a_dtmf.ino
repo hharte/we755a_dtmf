@@ -51,15 +51,18 @@
 #define MS_PER_TICK         20
 #define RELAY_HOLD_MS       100
 #define POST_DIAL_MS        100
+#define C1_DELAY_MS         60
 #define COUNT_PER_MS        93.6
 #define RELAY_HOLD_COUNT    (RELAY_HOLD_MS / MS_PER_TICK)
 #define POST_DIAL_COUNT     (POST_DIAL_MS / MS_PER_TICK)
+#define C1_DELAY_COUNT      (C1_DELAY_MS / MS_PER_TICK)
 
 #define DIAL_STATE_IDLE             0
 #define DIAL_STATE_WAIT_DTMF_DONE   1
-#define DIAL_STATE_OPERATE_RELAYS   2
-#define DIAL_STATE_DIALING_COMPLETE 3
-#define DIAL_STATE_DIALING_BLOCKED  4
+#define DIAL_STATE_OPERATE_C1       2
+#define DIAL_STATE_OPERATE_RELAYS   3
+#define DIAL_STATE_DIALING_COMPLETE 4
+#define DIAL_STATE_DIALING_BLOCKED  5
 
 /* Pin assignments:
  * ref: https://github.com/SpenceKonde/DxCore/blob/master/megaavr/extras/DA28.md
@@ -192,7 +195,7 @@ void setup(void) {
   attachInterrupt(digitalPinToInterrupt(LINK_E), link_isr,   CHANGE);
   attachInterrupt(digitalPinToInterrupt(DTMF_StD),    DTMF_isr,   RISING);
 
-  Serial.print("Western Electric 755A Crossbar PBX DTMF Converter\r\n");
+  Serial.print("Western Electric 755A Crossbar PBX DTMF Converter v1.0\r\n");
   Serial.print("(c) 2023 Howard M. Harte - github.com/hharte/we755a_dtmf\r\n");
 
   snprintf(outstr, sizeof(outstr), "\r\nWE755A> ");
@@ -220,7 +223,7 @@ void loop() {
       case 'W':
         dtmf_digits[0] = 2;
         dtmf_digits[1] = 0;
-        dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
+        dtmf_dial_state = DIAL_STATE_OPERATE_C1;
         LED_ON();
         Serial.print("\r\nDial 2 (tens)\r\n");
         while (DIAL_IN_PROGRESS());
@@ -231,7 +234,7 @@ void loop() {
       case 'H':
         dtmf_digits[0] = 3;
         dtmf_digits[1] = 0;
-        dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
+        dtmf_dial_state = DIAL_STATE_OPERATE_C1;
         LED_ON();
         Serial.print("\r\nDial 3 (tens)\r\n");
         while (DIAL_IN_PROGRESS());
@@ -254,7 +257,7 @@ void loop() {
         Serial.print(outstr);
         if (r == 0) r = 10; /* '0' is 10 for the 8870. */
         dtmf_digits[1] = r;
-        dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
+        dtmf_dial_state = DIAL_STATE_OPERATE_C1;
         LED_ON();
         while (DIAL_IN_PROGRESS());
         LED_OFF();
@@ -264,70 +267,70 @@ void loop() {
       case 'A':
       {
         digitalWrite(SSR_T2, LOW);
-        Serial.print("\r\Activate T2\r\n");
+        Serial.print("\r\nActivate T2\r\n");
         break;
       }
       case 'b':
       case 'B':
       {
         digitalWrite(SSR_T3, LOW);
-        Serial.print("\r\Activate T3\r\n");
+        Serial.print("\r\nActivate T3\r\n");
         break;
       }
       case 'c':
       case 'C':
       {
         digitalWrite(SSR_C1, LOW);
-        Serial.print("\r\Activate C1\r\n");
+        Serial.print("\r\nActivate C1\r\n");
         break;
       }
       case 'd':
       case 'D':
       {
         digitalWrite(SSR_1_7, LOW);
-        Serial.print("\r\Activate 1-7\r\n");
+        Serial.print("\r\nActivate 1-7\r\n");
         break;
       }
       case 'e':
       case 'E':
       {
         digitalWrite(SSR_2_8, LOW);
-        Serial.print("\r\Activate 2-8\r\n");
+        Serial.print("\r\nActivate 2-8\r\n");
         break;
       }
       case 'f':
       case 'F':
       {
         digitalWrite(SSR_3_9, LOW);
-        Serial.print("\r\Activate 3-9\r\n");
+        Serial.print("\r\nActivate 3-9\r\n");
         break;
       }
       case 'g':
       case 'G':
       {
         digitalWrite(SSR_4_0, LOW);
-        Serial.print("\r\Activate 4-0\r\n");
+        Serial.print("\r\nActivate 4-0\r\n");
         break;
       }
       case 'i':
       case 'I':
       {
         digitalWrite(SSR_5_6, LOW);
-        Serial.print("\r\Activate 5-6\r\n");
+        Serial.print("\r\nActivate 5-6\r\n");
         break;
       }
       case 'j':
       case 'J':
       {
         digitalWrite(SSR_6, LOW);
-        Serial.print("\r\Activate 6\r\n");
+        Serial.print("\r\nActivate 6\r\n");
         break;
       }
       case 'k':
       case 'K':
       {
         digitalWrite(SSR_SPARE, LOW);
-        Serial.print("\r\Activate Spare SSR\r\n");
+        Serial.print("\r\nActivate Spare SSR\r\n");
         break;
       }
       case 'r':
@@ -343,7 +346,7 @@ void loop() {
         digitalWrite(SSR_5_6,   HIGH);
         digitalWrite(SSR_6,     HIGH);
         digitalWrite(SSR_SPARE, HIGH);
-        Serial.print("\r\Released all relays\r\n");
+        Serial.print("\r\nReleased all relays\r\n");
         break;
       }
       case '\r':
@@ -484,8 +487,20 @@ ISR(TCA0_OVF_vect) {
           }
         }
         if (digits_collected == 2) {
-          dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
+          dtmf_dial_state = DIAL_STATE_OPERATE_C1;
         }
+      }
+      break;
+    case DIAL_STATE_OPERATE_C1:
+      dtmf_delay++;
+      if (dtmf_digits[1] > 0) {
+        /* Operate C1 relay */
+        digitalWrite(SSR_C1, LOW);
+      }
+
+      if (dtmf_delay == C1_DELAY_COUNT) {
+        dtmf_delay = 0;
+        dtmf_dial_state = DIAL_STATE_OPERATE_RELAYS;
       }
       break;
     case DIAL_STATE_OPERATE_RELAYS:
@@ -507,8 +522,6 @@ ISR(TCA0_OVF_vect) {
         }
 
         if (dtmf_digits[1] > 0) {
-          /* Operate C1 relay */
-          digitalWrite(SSR_C1, LOW);
           /* Operate Units relays */
           VPORTD.OUT &= ~(units_relay_table[dtmf_digits[1]]);
         }
