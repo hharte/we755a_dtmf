@@ -1,4 +1,4 @@
-# 755A PBX DTMF Converter
+# WE 755A PBX DTMF Converter
 
 
 # Introduction
@@ -21,6 +21,7 @@ Three boards have been assembled and installed in each of the 755A’s links.  T
 ![alt_text](https://raw.githubusercontent.com/hharte/we755a_dtmf/main/photos/755A_DTMF_Overview.jpg "image_tooltip")
 
 ![alt_text](https://github.com/hharte/we755a_dtmf/blob/main/photos/755A_DTMF_Wiring.jpg "image_tooltip")
+
 
 # Translation
 
@@ -346,6 +347,8 @@ Tip: (Violet): Pick up T from 2mF capacitors on lower right corner (looking at f
 
 Ring: (Slate): Pick up T from 2mF capacitors on lower right corner (looking at from rear):
 
+![alt_text](https://github.com/hharte/we755a_dtmf/blob/main/photos/link_drawing.png "image_tooltip")
+
 LINK_T2: (Red) Pick up from T2 relay coil.
 
 LINK_T3: (Brown) Pick up from T3 relay coil.
@@ -591,7 +594,7 @@ Conference calling with the 755A works as follows:
 
 ## Bill of Materials
 
-Online [DigiKey BOM](https://www.digikey.com/en/mylists/list/MP3JW7CHBF).
+Online [DigiKey BOM](https://www.digikey.com/en/mylists/list/MP3JW7CHBF).  [Interactive BOM](https://html-preview.github.io/?url=https://github.com/hharte/we755a_dtmf/blob/main/hardware/bom/ibom.html).
 
 
 <table>
@@ -836,3 +839,10 @@ Online [DigiKey BOM](https://www.digikey.com/en/mylists/list/MP3JW7CHBF).
    </td>
   </tr>
 </table>
+
+
+
+## Arduino AVD128DA28 Configuration
+
+
+![alt_text](https://github.com/hharte/we755a_dtmf/blob/main/photos/arduino_config.png "image_tooltip")
