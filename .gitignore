@@ -1,6 +1,8 @@
 *-bak
 *.bak
 *.lck
+*.FCBak
+*.gcode
 hardware/_autosave*
 hardware/we755a_dtmf-backups/
 hardware/fp-info-cache

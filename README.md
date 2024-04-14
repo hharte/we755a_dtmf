@@ -846,3 +846,8 @@ Online [DigiKey BOM](https://www.digikey.com/en/mylists/list/MP3JW7CHBF).  [Inte
 
 
 ![alt_text](https://github.com/hharte/we755a_dtmf/blob/main/photos/arduino_config.png "image_tooltip")
+
+
+# Other WE 755A Projects
+
+[WE 755A Power Supply](https://github.com/hharte/we755a_ps)
