@@ -851,3 +851,5 @@ Online [DigiKey BOM](https://www.digikey.com/en/mylists/list/MP3JW7CHBF).  [Inte
 # Other WE 755A Projects
 
 [WE 755A Power Supply](https://github.com/hharte/we755a_ps)
+
+[WE 755A Station Line Concentrator](https://github.com/hharte/we755a_slc)

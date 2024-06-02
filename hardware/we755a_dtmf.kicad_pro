@@ -515,6 +515,7 @@
       "/WE755A_G0": "POWER",
       "GND": "POWER",
       "GNDPWR": "POWER",
+      "Net-(J1-Pin_3)": "POWER",
       "Net-(J1-Pin_4)": "POWER",
       "Net-(JP4-A)": "POWER"
     },
